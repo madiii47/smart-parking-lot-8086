@@ -1,0 +1,208 @@
+.model small
+.stack 100h
+
+.data
+msg0 db 10,13,'Enter Operator Gate Passcode: $'
+msg1 db 10,13,10,13,'1. Vehicle Entry (Occupy Space)$'
+msg2 db 10,13,'2. Vehicle Exit (Free Space)$'
+msg3 db 10,13,'3. View Available Parking Spots$'
+msg4 db 10,13,'4. Shutdown System$'
+msg5 db 10,13,'Enter Choice: $'
+msg6 db 10,13,'Enter Number of Vehicles: $'
+msg7 db 10,13,'Current Available Spots: $'
+msg8 db 10,13,'Error: Lot Full! Not enough spaces available.$'
+msg9 db 10,13,'System Shutting Down. Goodbye.$'
+msg10 db 10,13,'Access Denied! Invalid Passcode.$'
+msg11 db 10,13,'Error: Parking lot is empty! No vehicles are parked here.$'
+
+spots dw 80            ; Maximum parking capacity / Available spaces
+passcode dw 1234       ; Secure operator passcode
+input_buffer dw ?      ; Temporary storage for vehicle counts
+choice db ?
+
+.code
+
+main proc
+    mov ax,@data
+    mov ds,ax
+
+passcode_check:
+    lea dx,msg0
+    mov ah,09h
+    int 21h
+
+    call input_variable
+
+    mov ax,input_buffer
+    cmp ax,passcode
+    jne wrong_passcode
+
+menu:
+    lea dx,msg1
+    mov ah,09h
+    int 21h
+
+    lea dx,msg2
+    mov ah,09h
+    int 21h
+
+    lea dx,msg3
+    mov ah,09h
+    int 21h
+
+    lea dx,msg4
+    mov ah,09h
+    int 21h
+
+    lea dx,msg5
+    mov ah,09h
+    int 21h
+
+    mov ah,01h
+    int 21h
+    mov choice,al
+
+    cmp choice,'1'
+    je vehicle_entry
+
+    cmp choice,'2'
+    je vehicle_exit
+
+    cmp choice,'3'
+    je display_spots
+
+    cmp choice,'4'
+    je exitprog
+
+    jmp menu
+
+vehicle_entry:
+    lea dx,msg6
+    mov ah,09h
+    int 21h
+
+    call input_variable
+
+    mov ax,spots
+    cmp ax,input_buffer      ; Check if we have enough empty spaces left
+    jb lot_full_error        ; If vehicles entering > available spots, throw error
+
+    sub ax,input_buffer      ; Deduct available spots as cars occupy them
+    mov spots,ax
+
+    jmp display_spots
+
+vehicle_exit:
+    lea dx,msg6
+    mov ah,09h
+    int 21h
+
+    call input_variable
+
+    mov ax,spots
+    add ax,input_buffer      ; Calculate projected new vacant spots
+    
+    cmp ax,80                ; Ensure total vacant spots never exceed maximum limit (80)
+    ja lot_empty_error       ; If it goes above 80, it means user is freeing unparked spaces
+
+    mov spots,ax             ; Save updated spaces if valid
+    jmp display_spots
+
+lot_full_error:
+    lea dx,msg8
+    mov ah,09h
+    int 21h
+    jmp menu
+
+lot_empty_error:
+    lea dx,msg11
+    mov ah,09h
+    int 21h
+    jmp menu
+
+display_spots:
+    lea dx,msg7
+    mov ah,09h
+    int 21h
+
+    mov ax,spots
+    call printnum
+
+    jmp menu
+
+wrong_passcode:
+    lea dx,msg10
+    mov ah,09h
+    int 21h
+    jmp passcode_check
+
+exitprog:
+    lea dx,msg9
+    mov ah,09h
+    int 21h
+
+    mov ah,4ch
+    int 21h
+
+main endp
+
+
+; =========================================================================
+; INPUT PROCEDURE: Processes dynamic digit numbers safely until ENTER
+; =========================================================================
+input_variable proc
+    mov cx, 0          ; Reset total accumulator
+
+input_loop:
+    mov ah,01h         ; Read keyboard input character
+    int 21h
+    
+    cmp al, 13         ; Check if user hit ENTER (ASCII 13)
+    je input_done
+
+    sub al,30h         ; Standard ASCII to numeric digit shift
+    mov bl, al
+    mov bh, 0          ; Clear high byte to keep BX pure (0-9)
+
+    ; Shift current accumulated value left by multiplying by 10
+    mov ax, cx         
+    mov dx, 0          ; Clear DX completely to prevent MUL register trash errors
+    mov si, 10
+    mul si             ; AX = AX * 10
+    
+    add ax, bx         ; Add the newly typed digit to the total
+    mov cx, ax         ; Move running total safely back into CX
+    jmp input_loop
+
+input_done:
+    mov input_buffer, cx   ; Save final dynamic number to RAM
+    ret
+input_variable endp
+
+
+; =========================================================================
+; OUTPUT PROCEDURE: Unpacks binary words into visible decimal string digits
+; =========================================================================
+printnum proc
+    mov bx,10
+    mov cx,0
+
+l1:
+    mov dx,0
+    div bx
+    push dx
+    inc cx
+    cmp ax,0
+    jne l1
+
+l2:
+    pop dx
+    add dl,30h
+    mov ah,02h
+    int 21h
+    loop l2
+
+    ret
+printnum endp
+
+end main
